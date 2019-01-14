@@ -21,16 +21,23 @@
 
 pub use shaderc::{self, ShaderKind, SourceLanguage};
 
+#[cfg(feature = "reflection")]
+#[doc(inline)]
+pub mod reflect;
+
 macro_rules! vk_make_version {
     ($major: expr, $minor: expr, $patch: expr) => ((($major as u32) << 22) | (($minor as u32) << 12) | $patch as u32)
 }
 
 /// Interface to create shader modules from shaders.
 /// Implemented for static shaders via [`compile_to_spirv!`] macro.
-/// 
+/// `
 pub trait Shader {
     /// Get spirv bytecode.
     fn spirv(&self) -> Result<std::borrow::Cow<'static, [u8]>, failure::Error>;
+
+    /// Get a reflection representation object of the shader
+    fn reflect(&self) -> Result<Box<dyn reflect::ShaderDescription>, failure::Error>;
 
     /// Create shader module.
     fn module<B>(&self, factory: &rendy_factory::Factory<B>) -> Result<B::ShaderModule, failure::Error>
@@ -84,12 +91,17 @@ where
                     let mut ops = shaderc::CompileOptions::new().ok_or_else(|| failure::format_err!("Failed to init Shaderc"))?;
                     ops.set_target_env(shaderc::TargetEnv::Vulkan, vk_make_version!(1, 0, 0));
                     ops.set_source_language(self.lang);
+                    ops.set_generate_debug_info(); // TODO: make this optional for release shaders
                     ops.set_optimization_level(shaderc::OptimizationLevel::Performance);
                     ops
                 }).as_ref(),
             )?;
 
         Ok(std::borrow::Cow::Owned(artifact.as_binary_u8().into()))
+    }
+
+    fn reflect(&self) -> Result<Box<dyn reflect::ShaderDescription>, failure::Error> {
+        Ok(Box::new(reflect::SpirvShaderDescription::from_bytes(&*self.spirv()?)?))
     }
 }
 

@@ -42,6 +42,7 @@ pub struct Pipeline {
     /// Colors for pipeline.
     pub colors: Vec<gfx_hal::pso::ColorBlendDesc>,
 
+
     /// Depth stencil for pipeline.
     pub depth_stencil: gfx_hal::pso::DepthStencilDesc,
 }

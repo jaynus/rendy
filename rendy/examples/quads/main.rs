@@ -14,7 +14,7 @@
 #![deny(unconditional_recursion)]
 #![deny(unions_with_drop_fields)]
 #![deny(while_true)]
-#![deny(unused)]
+//#![deny(unused)]
 #![deny(bad_style)]
 #![deny(future_incompatible)]
 #![deny(rust_2018_compatibility)]
@@ -134,8 +134,16 @@ where
         }]
     }
 
-    fn layouts() -> Vec<Layout> {
-        vec![Layout {
+    /* Use reflection to provide the descriptor set
+    */
+    fn layouts() -> Option<Vec<Layout>> {
+        Some(vec![Layout {
+            sets: vec![SetLayout {
+                bindings: render_vertex.reflect().unwrap().descriptor_sets()[0].clone(),
+            }],
+            push_constants: Vec::new(),
+        }])
+        /*Some(vec![Layout {
             sets: vec![SetLayout {
                 bindings: vec![gfx_hal::pso::DescriptorSetLayoutBinding {
                     binding: 0,
@@ -146,8 +154,9 @@ where
                 }]
             }],
             push_constants: Vec::new(),
-        }]
+        }])*/
     }
+
 
     fn build<'a>(
         factory: &mut Factory<B>,

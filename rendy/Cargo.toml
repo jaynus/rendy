@@ -33,7 +33,7 @@ rendy-frame = { path = "../frame", optional = true }
 rendy-graph = { path = "../graph", optional = true }
 rendy-memory = { path = "../memory", optional = true }
 rendy-mesh = { path = "../mesh", optional = true }
-rendy-shader = { path = "../shader", optional = true }
+rendy-shader = { path = "../shader", features = ["reflection"], optional = true }
 rendy-resource = { path = "../resource", optional = true }
 rendy-texture = { path = "../texture", optional = true }
 rendy-util = { path = "../util", optional = true }
