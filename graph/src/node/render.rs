@@ -42,7 +42,6 @@ pub struct Pipeline {
     /// Colors for pipeline.
     pub colors: Vec<gfx_hal::pso::ColorBlendDesc>,
 
-
     /// Depth stencil for pipeline.
     pub depth_stencil: gfx_hal::pso::DepthStencilDesc,
 }
@@ -79,9 +78,9 @@ pub struct RenderPassNode<B: gfx_hal::Backend, R> {
 
 /// Render pass.
 pub trait RenderPass<B, T>: std::fmt::Debug + Send + Sync + 'static
-where
-    B: gfx_hal::Backend,
-    T: ?Sized,
+    where
+        B: gfx_hal::Backend,
+        T: ?Sized,
 {
     /// Pass name.
     fn name() -> &'static str;
@@ -107,11 +106,10 @@ where
     }
 
     /// Pipeline layouts
-    fn layouts() -> Vec<Layout> {
-        vec![Layout {
-            sets: Vec::new(),
-            push_constants: Vec::new(),
-        }]
+    /// Defaults to none for a using reflected descriptors
+    fn layouts() -> Option<Vec<Layout>> {
+        // default to none
+        None
     }
 
     /// Get vertex input.
@@ -151,8 +149,8 @@ where
 
     /// Create `NodeBuilder` for this node.
     fn builder() -> NodeBuilder<B, T>
-    where
-        Self: Sized,
+        where
+            Self: Sized,
     {
         std::marker::PhantomData::<Self>.builder()
     }
@@ -184,7 +182,7 @@ where
     ) -> Self;
 
     /// Prepare to record drawing commands.
-    /// 
+    ///
     /// Should return true if commands must be re-recorded.
     fn prepare(&mut self, _factory: &mut Factory<B>, _aux: &T) -> bool {
         false
@@ -206,10 +204,10 @@ where
 
 /// Overall description for node.
 impl<B, T, R> NodeDesc<B, T> for std::marker::PhantomData<R>
-where
-    B: gfx_hal::Backend,
-    T: ?Sized,
-    R: RenderPass<B, T>,
+    where
+        B: gfx_hal::Backend,
+        T: ?Sized,
+        R: RenderPass<B, T>,
 {
     type Node = RenderPassNode<B, R>;
 
@@ -253,31 +251,54 @@ where
 
         let (attachments, images) = images.split_at_mut(R::colors() + R::depth() as usize);
 
+        log::trace!("Load shader sets for '{}'", R::name());
+        let mut shaders = Vec::new();
+        let shader_sets = R::load_shader_sets(&mut shaders, factory, aux);
+
         log::trace!("Creating layouts for '{}'", R::name());
 
-        let (pipeline_layouts, set_layouts): (Vec<_>, Vec<_>) = R::layouts()
-            .into_iter()
-            .map(|layout| {
-                let set_layouts = layout
-                    .sets
+        //let (pipeline_layouts, set_layouts): (Vec<_>, Vec<_>);
+        let pipeline_layouts: Vec<_>;
+        let set_layouts: Vec<_>;
+
+        match R::layouts() {
+            Some(user_layout) => {
+                let (pl, sl): (Vec<_>, Vec<_>) = user_layout
                     .into_iter()
-                    .map(|set| {
-                        unsafe { gfx_hal::Device::create_descriptor_set_layout(
-                            factory.device(),
-                            set.bindings,
-                            std::iter::empty::<B::Sampler>(),
-                        ) }
-                    }).collect::<Result<Vec<_>, _>>()?;
-                let pipeline_layout = unsafe {
-                    gfx_hal::Device::create_pipeline_layout(
-                        factory.device(),
-                        &set_layouts,
-                        layout.push_constants,
-                    ) }?;
-                Ok((pipeline_layout, set_layouts))
-            }).collect::<Result<Vec<_>, failure::Error>>()?
-            .into_iter()
-            .unzip();
+                    .map(|layout| {
+                        let sl = layout
+                            .sets
+                            .into_iter()
+                            .map(|set| {
+                                unsafe {
+                                    gfx_hal::Device::create_descriptor_set_layout(
+                                        factory.device(),
+                                        set.bindings,
+                                        std::iter::empty::<B::Sampler>(),
+                                    )
+                                }
+                            }).collect::<Result<Vec<_>, _>>()?;
+                        let pipeline_layout = unsafe {
+                            gfx_hal::Device::create_pipeline_layout(
+                                factory.device(),
+                                &sl,
+                                layout.push_constants,
+                            )
+                        }?;
+                        Ok((pipeline_layout, sl))
+                    }).collect::<Result<Vec<_>, failure::Error>>()?
+                    .into_iter()
+                    .unzip();
+
+                pipeline_layouts = pl;
+                set_layouts = sl;
+            },
+            None => {
+                // Reflect the layout from the provided shaders
+                set_layouts = Vec::new();
+                pipeline_layouts = Vec::new();
+            },
+        };
 
         let pass = R::build(
             factory,
@@ -317,31 +338,31 @@ where
                     },
                     samples: 1,
                 }).chain(if R::depth() {
-                    Some(gfx_hal::pass::Attachment {
-                        format: Some(depth().image.format()),
-                        ops: gfx_hal::pass::AttachmentOps {
-                            load: if depth().clear.is_some() {
-                                gfx_hal::pass::AttachmentLoadOp::Clear
-                            } else {
-                                gfx_hal::pass::AttachmentLoadOp::Load
-                            },
-                            store: gfx_hal::pass::AttachmentStoreOp::Store,
+                Some(gfx_hal::pass::Attachment {
+                    format: Some(depth().image.format()),
+                    ops: gfx_hal::pass::AttachmentOps {
+                        load: if depth().clear.is_some() {
+                            gfx_hal::pass::AttachmentLoadOp::Clear
+                        } else {
+                            gfx_hal::pass::AttachmentLoadOp::Load
                         },
-                        stencil_ops: gfx_hal::pass::AttachmentOps::DONT_CARE,
-                        layouts: {
-                            let layout = depth().layout;
-                            let from = if depth().clear.is_some() {
-                                gfx_hal::image::Layout::Undefined
-                            } else {
-                                layout
-                            };
-                            from..layout
-                        },
-                        samples: 1,
-                    })
-                } else {
-                    None
-                });
+                        store: gfx_hal::pass::AttachmentStoreOp::Store,
+                    },
+                    stencil_ops: gfx_hal::pass::AttachmentOps::DONT_CARE,
+                    layouts: {
+                        let layout = depth().layout;
+                        let from = if depth().clear.is_some() {
+                            gfx_hal::image::Layout::Undefined
+                        } else {
+                            layout
+                        };
+                        from..layout
+                    },
+                    samples: 1,
+                })
+            } else {
+                None
+            });
 
             let colors = (0..R::colors())
                 .map(|index| (index, color(index).layout))
@@ -445,12 +466,7 @@ where
         log::trace!("Creating graphics pipelines for '{}'", R::name());
 
         let graphics_pipelines = {
-            let mut shaders = Vec::new();
-
             let pipelines = R::pipelines();
-
-            log::trace!("Load shader sets for '{}'", R::name());
-            let shader_sets = R::load_shader_sets(&mut shaders, factory, aux);
 
             let descs = pipelines
                 .iter()
@@ -522,8 +538,8 @@ where
             ) }?;
 
         let mut command_pool = factory.create_command_pool(family)?
-                .with_capability()
-                .expect("Graph must specify family that supports `Graphics`");
+            .with_capability()
+            .expect("Graph must specify family that supports `Graphics`");
 
         let acquire = if !is_metal::<B>() {
             let (stages, barriers) = gfx_acquire_barriers(buffers, images);
@@ -595,18 +611,18 @@ where
 }
 
 impl<'a, B, R> NodeSubmittable<'a, B> for RenderPassNode<B, R>
-where
-    B: gfx_hal::Backend,
+    where
+        B: gfx_hal::Backend,
 {
     type Submittable = Submit<B>;
     type Submittables = std::iter::Once<Submit<B>>;
 }
 
 impl<B, T, R> Node<B, T> for RenderPassNode<B, R>
-where
-    B: gfx_hal::Backend,
-    T: ?Sized,
-    R: RenderPass<B, T>,
+    where
+        B: gfx_hal::Backend,
+        T: ?Sized,
+        R: RenderPass<B, T>,
 {
     type Capability = Graphics;
     type Desc = std::marker::PhantomData<R>;

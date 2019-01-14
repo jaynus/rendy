@@ -36,6 +36,7 @@ pub trait Shader {
     /// Get spirv bytecode.
     fn spirv(&self) -> Result<std::borrow::Cow<'static, [u8]>, failure::Error>;
 
+    #[cfg(feature = "reflection")]
     /// Get a reflection representation object of the shader
     fn reflect(&self) -> Result<Box<dyn reflect::ShaderDescription>, failure::Error>;
 
@@ -59,8 +60,11 @@ pub struct ShaderInfo<P, E> {
     entry: E,
 }
 
-impl<P, E> ShaderInfo<P, E> {
-
+impl<P, E> ShaderInfo<P, E>
+    where
+        P: AsRef<std::path::Path> + std::fmt::Debug,
+        E: AsRef<str>,
+{
     /// New dynamic shader.
     pub fn new(path: P, kind: ShaderKind, lang: SourceLanguage, entry: E) -> Self {
         ShaderInfo {
@@ -70,14 +74,8 @@ impl<P, E> ShaderInfo<P, E> {
             entry: entry.into(),
         }
     }
-}
 
-impl<P, E> Shader for ShaderInfo<P, E>
-where
-    P: AsRef<std::path::Path> + std::fmt::Debug,
-    E: AsRef<str>,
-{
-    fn spirv(&self) -> Result<std::borrow::Cow<'static, [u8]>, failure::Error> {
+    fn compile(&self, debug: bool) -> Result<std::borrow::Cow<'static, [u8]>, failure::Error> {
         let code = std::fs::read_to_string(&self.path)?;
 
         let artifact = shaderc::Compiler::new()
@@ -91,17 +89,31 @@ where
                     let mut ops = shaderc::CompileOptions::new().ok_or_else(|| failure::format_err!("Failed to init Shaderc"))?;
                     ops.set_target_env(shaderc::TargetEnv::Vulkan, vk_make_version!(1, 0, 0));
                     ops.set_source_language(self.lang);
-                    ops.set_generate_debug_info(); // TODO: make this optional for release shaders
                     ops.set_optimization_level(shaderc::OptimizationLevel::Performance);
+                    if debug {
+                        ops.set_generate_debug_info();
+                    }
                     ops
                 }).as_ref(),
             )?;
 
         Ok(std::borrow::Cow::Owned(artifact.as_binary_u8().into()))
     }
+}
 
+impl<P, E> Shader for ShaderInfo<P, E>
+where
+    P: AsRef<std::path::Path> + std::fmt::Debug,
+    E: AsRef<str>,
+{
+    fn spirv(&self) -> Result<std::borrow::Cow<'static, [u8]>, failure::Error> {
+        self.compile(false)
+    }
+
+    #[cfg(feature = "reflection")]
     fn reflect(&self) -> Result<Box<dyn reflect::ShaderDescription>, failure::Error> {
-        Ok(Box::new(reflect::SpirvShaderDescription::from_bytes(&*self.spirv()?)?))
+        let description = reflect::SpirvShaderDescription::from_bytes(&*(self.compile(true)?))?;
+        Ok(Box::new(description))
     }
 }
 
