@@ -1,6 +1,8 @@
 
 //! Shader compilation.
 
+#![feature(try_trait)]
+
 #![forbid(overflowing_literals)]
 #![deny(missing_copy_implementations)]
 #![deny(missing_debug_implementations)]
@@ -18,6 +20,7 @@
 #![deny(rust_2018_compatibility)]
 #![deny(rust_2018_idioms)]
 #![allow(unused_unsafe)]
+
 
 pub use shaderc::{self, ShaderKind, SourceLanguage};
 
@@ -38,7 +41,7 @@ pub trait Shader {
 
     #[cfg(feature = "reflection")]
     /// Get a reflection representation object of the shader
-    fn reflect(&self) -> Result<Box<dyn reflect::ShaderDescription>, failure::Error>;
+    fn reflect(&self) -> Result<reflect::SpirvShaderDescription, failure::Error>;
 
     /// Create shader module.
     fn module<B>(&self, factory: &rendy_factory::Factory<B>) -> Result<B::ShaderModule, failure::Error>
@@ -111,9 +114,8 @@ where
     }
 
     #[cfg(feature = "reflection")]
-    fn reflect(&self) -> Result<Box<dyn reflect::ShaderDescription>, failure::Error> {
-        let description = reflect::SpirvShaderDescription::from_bytes(&*(self.compile(true)?))?;
-        Ok(Box::new(description))
+    fn reflect(&self) -> Result<reflect::SpirvShaderDescription, failure::Error> {
+        Ok(reflect::SpirvShaderDescription::from_bytes(&*(self.compile(true)?), true)?)
     }
 }
 

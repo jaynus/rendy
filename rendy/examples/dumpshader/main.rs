@@ -38,13 +38,7 @@ fn main() {
 
     match shader.reflect() {
         Ok(info) => {
-            for input in info.inputs() {
-                println!("input: {:?}", input);
-            }
-
-            for output in info.outputs() {
-                println!("output: {:?}", output);
-            }
+            println!("{:?}", info);
         },
         Err(e) => {
             panic!("Reflect on shader failed: {}", e);
