@@ -32,6 +32,9 @@ use rendy::{
     resource::buffer::Buffer,
 };
 
+#[cfg(feature = "reflection")]
+use rendy::shader::reflect::SpirvShaderDescription;
+
 use winit::{
     EventsLoop, WindowBuilder,
 };
@@ -96,6 +99,14 @@ where
         vec![Color::VERTEX.gfx_vertex_input_desc()]
     }
 
+    fn load_shader_descriptions<'a>(
+        storage: &'a mut Vec<SpirvShaderDescription>,
+        _aux: &mut T,
+    ) {
+        storage.push(render_vertex.reflect().unwrap());
+        storage.push(render_fragment.reflect().unwrap());
+    }
+
     fn load_shader_sets<'a>(
         storage: &'a mut Vec<B::ShaderModule>,
         factory: &mut Factory<B>,
@@ -136,11 +147,21 @@ where
 
     /* Use reflection to provide the descriptor set
     */
+    #[cfg(not(feature = "reflection"))]
     fn layouts() -> Option<Vec<Layout>> {
-        use rendy::graph::reflect::ShaderReflectBuilder;
-        Some(vec![render_vertex.reflect().unwrap().layout()])
+        Some(vec![Layout {
+            sets: vec![SetLayout {
+                bindings: vec![gfx_hal::pso::DescriptorSetLayoutBinding {
+                    binding: 0,
+                    ty: gfx_hal::pso::DescriptorType::StorageBuffer,
+                    count: 1,
+                    stage_flags: gfx_hal::pso::ShaderStageFlags::VERTEX,
+                    immutable_samplers: false,
+                }]
+            }],
+            push_constants: Vec::new(),
+        }])
     }
-
 
     fn build<'a>(
         factory: &mut Factory<B>,

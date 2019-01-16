@@ -225,7 +225,7 @@ impl ReflectInto<gfx_hal::pso::DescriptorSetLayoutBinding> for descriptor::Refle
 
 
 /// Implementation of shader reflection for SPIRV
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub struct SpirvShaderDescription {
     /// Hashmap of output variables with names.
     pub output_variables: HashMap<String, gfx_hal::pso::AttributeDesc>,

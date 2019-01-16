@@ -10,6 +10,9 @@ use crate::{
     node::{Node, NodeBuffer, NodeBuilder, NodeDesc, NodeImage, BufferAccess, ImageAccess, NodeSubmittable, gfx_acquire_barriers, gfx_release_barriers},
 };
 
+#[cfg(feature = "reflection")]
+use rendy_shader::reflect::SpirvShaderDescription;
+
 /// Set layout
 #[derive(Clone, Debug, Default)]
 pub struct SetLayout {
@@ -107,16 +110,6 @@ pub trait RenderPass<B, T>: std::fmt::Debug + Send + Sync + 'static
 
     /// Pipeline layouts
     /// Defaults to none for a using reflected descriptors
-    #[cfg(not(feature = "reflection"))]
-    fn layouts() -> Option<Vec<Layout>> {
-        // default to none
-        None
-    }
-
-    #[cfg(feature = "reflection")]
-    /// Pipeline layouts
-    /// Defaults to none for a using reflected descriptors
-    // TODO: default to reflect
     fn layouts() -> Option<Vec<Layout>> {
         // default to none
         None
@@ -181,6 +174,21 @@ pub trait RenderPass<B, T>: std::fmt::Debug + Send + Sync + 'static
         factory: &mut Factory<B>,
         aux: &mut T,
     ) -> Vec<gfx_hal::pso::GraphicsShaderSet<'a, B>>;
+
+    /// Load shader set.
+    /// This function should create required shader modules and fill `GraphicsShaderSet` structure.
+    ///
+    /// # Parameters
+    ///
+    /// `storage`   - vector where this function can store shader reflected modules that map to the modules in load_shader_sets
+    ///
+    /// `aux`       - auxiliary data container. May be anything the implementation desires.
+    ///
+    #[cfg(feature = "reflection")]
+    fn load_shader_descriptions<'a>(
+        _storage: &'a mut Vec<SpirvShaderDescription>,
+        _aux: &mut T,
+    ) {}
 
     /// Build pass instance.
     fn build<'a>(
@@ -265,13 +273,35 @@ impl<B, T, R> NodeDesc<B, T> for std::marker::PhantomData<R>
         let mut shaders = Vec::new();
         let shader_sets = R::load_shader_sets(&mut shaders, factory, aux);
 
+
+        let mut layout;
+        if cfg!(feature = "reflection") {
+            match R::layouts() {
+                None => {
+                    log::trace!("Load shader descriptions for '{}'", R::name());
+
+                    let mut shader_descriptions = Vec::new();
+                    R::load_shader_descriptions(&mut shader_descriptions, aux);
+
+                    use crate::reflect::ShaderReflectBuilder;
+
+                    layout = Some(vec![shader_descriptions[0].layout()]);
+                },
+                Some(l) => layout = Some(l),
+            };
+        } else {
+            layout = R::layouts();
+        }
+
+
+
         log::trace!("Creating layouts for '{}'", R::name());
 
         //let (pipeline_layouts, set_layouts): (Vec<_>, Vec<_>);
         let pipeline_layouts: Vec<_>;
         let set_layouts: Vec<_>;
 
-        match R::layouts() {
+        match layout {
             Some(user_layout) => {
                 let (pl, sl): (Vec<_>, Vec<_>) = user_layout
                     .into_iter()
