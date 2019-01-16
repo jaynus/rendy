@@ -275,7 +275,8 @@ impl<B, T, R> NodeDesc<B, T> for std::marker::PhantomData<R>
 
 
         let mut layout;
-        if cfg!(feature = "reflection") {
+
+        #[cfg(feature = "reflection")]
             match R::layouts() {
                 None => {
                     log::trace!("Load shader descriptions for '{}'", R::name());
@@ -288,10 +289,12 @@ impl<B, T, R> NodeDesc<B, T> for std::marker::PhantomData<R>
                     layout = Some(vec![shader_descriptions[0].layout()]);
                 },
                 Some(l) => layout = Some(l),
-            };
-        } else {
-            layout = R::layouts();
-        }
+            }
+
+        #[cfg(not(feature = "reflection"))]
+            {
+                layout = R::layouts();
+            }
 
 
 

@@ -25,12 +25,15 @@ use rendy::{
     command::{Compute, RenderPassInlineEncoder, Submit, CommandPool, CommandBuffer, PendingState, ExecutableState, MultiShot, SimultaneousUse, DrawCommand, FamilyId},
     factory::{Config, Factory},
     frame::{Frames},
-    graph::{Graph, GraphBuilder, render::{RenderPass, Layout, SetLayout}, present::PresentNode, NodeBuffer, NodeImage, BufferAccess, Node, NodeDesc, NodeSubmittable, gfx_acquire_barriers, gfx_release_barriers},
+    graph::{Graph, GraphBuilder, render::{RenderPass}, present::PresentNode, NodeBuffer, NodeImage, BufferAccess, Node, NodeDesc, NodeSubmittable, gfx_acquire_barriers, gfx_release_barriers},
     memory::MemoryUsageValue,
     mesh::{AsVertex, Color},
     shader::{Shader, StaticShaderInfo, ShaderKind, SourceLanguage},
     resource::buffer::Buffer,
 };
+
+#[cfg(not(feature = "reflection"))]
+use rendy::graph::render::{Layout, SetLayout};
 
 #[cfg(feature = "reflection")]
 use rendy::shader::reflect::SpirvShaderDescription;
@@ -99,6 +102,7 @@ where
         vec![Color::VERTEX.gfx_vertex_input_desc()]
     }
 
+    #[cfg(feature = "reflection")]
     fn load_shader_descriptions<'a>(
         storage: &'a mut Vec<SpirvShaderDescription>,
         _aux: &mut T,
