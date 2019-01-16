@@ -11,6 +11,8 @@ metal = ["rendy-factory/metal", "rendy-graph/metal", "rendy-wsi/metal", "gfx-bac
 vulkan = ["rendy-factory/vulkan", "rendy-graph/vulkan", "rendy-wsi/vulkan", "gfx-backend-vulkan"]
 serde-1 = ["gfx-hal/serde", "rendy-factory/serde-1", "rendy-mesh/serde-1", "rendy-texture/serde-1"]
 
+reflection = [ "rendy-shader/reflection", "rendy-graph/reflection" ]
+
 command = ["rendy-command"]
 factory = ["rendy-factory", "command", "resource", "wsi"]
 frame = ["rendy-frame", "factory"]
@@ -23,7 +25,7 @@ texture = ["rendy-texture", "factory", "util"]
 util = ["rendy-util"]
 wsi = ["rendy-wsi"]
 
-full = ["graph", "mesh", "texture", "shader"]
+full = ["graph", "mesh", "texture", "shader", "reflection"]
 default = ["full"]
 
 [dependencies]
@@ -33,7 +35,7 @@ rendy-frame = { path = "../frame", optional = true }
 rendy-graph = { path = "../graph", optional = true }
 rendy-memory = { path = "../memory", optional = true }
 rendy-mesh = { path = "../mesh", optional = true }
-rendy-shader = { path = "../shader", features = ["reflection"], optional = true }
+rendy-shader = { path = "../shader", optional = true }
 rendy-resource = { path = "../resource", optional = true }
 rendy-texture = { path = "../texture", optional = true }
 rendy-util = { path = "../util", optional = true }

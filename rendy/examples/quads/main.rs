@@ -137,25 +137,8 @@ where
     /* Use reflection to provide the descriptor set
     */
     fn layouts() -> Option<Vec<Layout>> {
-        use rendy_shader::reflect::AsVector;
-        Some(vec![Layout {
-            sets: vec![SetLayout {
-                bindings: render_vertex.reflect().unwrap().descriptor_sets[0].as_vector(),
-            }],
-            push_constants: Vec::new(),
-        }])
-        /*Some(vec![Layout {
-            sets: vec![SetLayout {
-                bindings: vec![gfx_hal::pso::DescriptorSetLayoutBinding {
-                    binding: 0,
-                    ty: gfx_hal::pso::DescriptorType::StorageBuffer,
-                    count: 1,
-                    stage_flags: gfx_hal::pso::ShaderStageFlags::VERTEX,
-                    immutable_samplers: false,
-                }]
-            }],
-            push_constants: Vec::new(),
-        }])*/
+        use rendy::graph::reflect::ShaderReflectBuilder;
+        Some(vec![render_vertex.reflect().unwrap().layout()])
     }
 
 

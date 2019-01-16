@@ -107,6 +107,16 @@ pub trait RenderPass<B, T>: std::fmt::Debug + Send + Sync + 'static
 
     /// Pipeline layouts
     /// Defaults to none for a using reflected descriptors
+    #[cfg(not(feature = "reflection"))]
+    fn layouts() -> Option<Vec<Layout>> {
+        // default to none
+        None
+    }
+
+    #[cfg(feature = "reflection")]
+    /// Pipeline layouts
+    /// Defaults to none for a using reflected descriptors
+    // TODO: default to reflect
     fn layouts() -> Option<Vec<Layout>> {
         // default to none
         None
