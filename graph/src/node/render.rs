@@ -522,8 +522,10 @@ impl<B, T, R> NodeDesc<B, T> for std::marker::PhantomData<R>
                     let mut vertex_buffers = Vec::new();
                     let mut attributes = Vec::new();
 
-                    for &(ref elemets, stride) in &pipeline.vertices {
-                        push_vertex_desc(elemets, stride, &mut vertex_buffers, &mut attributes);
+                    // TODO: validation happens here maybe?
+
+                    for &(ref elements, stride) in &pipeline.vertices {
+                        push_vertex_desc(elements, stride, &mut vertex_buffers, &mut attributes);
                     }
 
                     gfx_hal::pso::GraphicsPipelineDesc {

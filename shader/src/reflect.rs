@@ -1,6 +1,8 @@
 //! Using spirv-reflect-rs for reflection.
 //!
 
+use log::{trace};
+
 use std::fs::File;
 use std::io::prelude::*;
 use std::collections::HashMap;
@@ -69,7 +71,6 @@ impl From<std::option::NoneError> for ReflectError {
     }
 }
 
-
 impl ReflectInto<Format> for image::ReflectFormat {
     fn reflect_into(&self, ) -> Result<Format, ReflectError> {
         match self {
@@ -94,10 +95,6 @@ fn type_element_format(flags: variable::ReflectTypeFlags, traits: &traits::Refle
     let mut current_type = Format::R32Float;
 
     if flags.contains(variable::ReflectTypeFlags::INT) {
-        // TODO: rendy/gfx doesnt seem to support non-32 bit formats?
-        // TODO: support other bits
-        assert_eq!(traits.numeric.scalar.width, 32);
-
         current_type = match traits.numeric.scalar.signedness {
             1 => match traits.numeric.scalar.width {
                 8 => Format::R8Int,
@@ -113,7 +110,7 @@ fn type_element_format(flags: variable::ReflectTypeFlags, traits: &traits::Refle
                 64 => Format::R64Uint,
                 _ => panic!("Unrecognized scalar width for unsigned int"),
             },
-            _ => panic!("LOL"),
+            _ => panic!("Invalid signedness flag"),
         };
     }
     if flags.contains(variable::ReflectTypeFlags::FLOAT) {
@@ -132,21 +129,21 @@ fn type_element_format(flags: variable::ReflectTypeFlags, traits: &traits::Refle
                 Format::R32Float => Format::Rg32Float,
                 Format::R32Int => Format::Rg32Int,
                 Format::R32Uint => Format::Rg32Int,
-                _ => panic!("LOL: {:?}", current_type),
+                _ => panic!("Unknown type for vector: {:?}", current_type),
             },
             3 => match current_type {
                 Format::R64Float => Format::Rgb64Float,
                 Format::R32Float => Format::Rgb32Float,
                 Format::R32Int => Format::Rgb32Int,
                 Format::R32Uint => Format::Rgb32Int,
-                _ => panic!("LOL: {:?}", current_type),
+                _ => panic!("Unknown type for vector: {:?}", current_type),
             },
             4 => match current_type {
                 Format::R64Float => Format::Rgba64Float,
                 Format::R32Float => Format::Rgba32Float,
                 Format::R32Int => Format::Rgba32Int,
                 Format::R32Uint => Format::Rgba32Int,
-                _ => panic!("LOL: {:?}", current_type),
+                _ => panic!("Unknown type for vector: {:?}", current_type),
             },
             _ => panic!("LOL: {:?}", traits.numeric.vector.component_count),
         };
@@ -167,8 +164,7 @@ impl ReflectInto<(String, gfx_hal::pso::AttributeDesc)> for variable::ReflectInt
         Ok((self.name.clone(), gfx_hal::pso::AttributeDesc {
             location: self.location,
             binding: self.location,
-            //element: gfx_hal::pso::Element { format: self.format.reflect_into()?, offset: 0, },
-            element: self.type_description.as_ref()?.reflect_into()?, // TODO: elements
+            element: self.type_description.as_ref()?.reflect_into()?,
         }))
     }
 }
@@ -222,7 +218,30 @@ impl ReflectInto<gfx_hal::pso::DescriptorSetLayoutBinding> for descriptor::Refle
     }
 }
 
+fn convert_stage(stage: variable::ReflectShaderStageFlags) -> gfx_hal::pso::ShaderStageFlags {
+    let mut bits = gfx_hal::pso::ShaderStageFlags::empty();
 
+    if stage.contains(variable::ReflectShaderStageFlags::VERTEX) {
+        bits &= gfx_hal::pso::ShaderStageFlags::VERTEX;
+    }
+    if stage.contains(variable::ReflectShaderStageFlags::FRAGMENT) {
+        bits &= gfx_hal::pso::ShaderStageFlags::FRAGMENT;
+    }
+    if stage.contains(variable::ReflectShaderStageFlags::GEOMETRY) {
+        bits &= gfx_hal::pso::ShaderStageFlags::GEOMETRY;
+    }
+    if stage.contains(variable::ReflectShaderStageFlags::COMPUTE) {
+        bits &= gfx_hal::pso::ShaderStageFlags::COMPUTE;
+    }
+    if stage.contains(variable::ReflectShaderStageFlags::TESSELLATION_CONTROL) {
+        bits &= gfx_hal::pso::ShaderStageFlags::HULL;
+    }
+    if stage.contains(variable::ReflectShaderStageFlags::TESSELLATION_EVALUATION) {
+        bits &= gfx_hal::pso::ShaderStageFlags::DOMAIN;
+    }
+
+    bits
+}
 
 /// Implementation of shader reflection for SPIRV
 #[derive(Clone)]
@@ -238,6 +257,7 @@ pub struct SpirvShaderDescription {
 impl SpirvShaderDescription {
     ///
     pub fn from_bytes(data: &[u8], strict: bool) -> Result<Self, ReflectError> {
+        trace!("Shader reflecting into SpirvShaderDescription");
         match ShaderModule::load_u8_data(data) {
             Ok(module) => {
                 Ok(Self{
@@ -275,7 +295,12 @@ impl SpirvShaderDescription {
                             }
                         })
                         .map(|v| {
-                            v.reflect_into().unwrap()
+                            let mut values = v.reflect_into().unwrap();
+                            // Fix shader stages
+                            values.iter_mut().for_each(|(_, set)| {
+                                set.stage_flags = convert_stage(module.get_shader_stage());
+                            });
+                            values
                         })
                         .collect(),
                 })
