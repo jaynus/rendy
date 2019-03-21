@@ -149,10 +149,7 @@ where
     #[cfg(feature = "spirv-reflection")]
     fn layout(&self) -> Layout {
         use rendy::graph::reflect::ShaderLayoutGenerator;
-        log::trace!("Reflected: {:?}", VERTEX.reflect().unwrap().layout());
-        let ret = (VERTEX.reflect().unwrap(), FRAGMENT.reflect().unwrap()).layout().unwrap();
-        //ret.sets[0].bindings[0].stage_flags = gfx_hal::pso::ShaderStageFlags::GRAPHICS;
-        ret
+        (VERTEX.reflect().unwrap(), FRAGMENT.reflect().unwrap()).layout().unwrap()
     }
 
 

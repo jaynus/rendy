@@ -109,6 +109,7 @@ where
         }
     }
 
+    #[cfg(not(feature = "spirv-reflection"))]
     fn layout(&self) -> Layout {
         Layout {
             sets: vec![SetLayout {
@@ -131,6 +132,12 @@ where
             }],
             push_constants: Vec::new(),
         }
+    }
+
+    #[cfg(feature = "spirv-reflection")]
+    fn layout(&self) -> Layout {
+        use rendy::graph::reflect::ShaderLayoutGenerator;
+        (VERTEX.reflect().unwrap(), FRAGMENT.reflect().unwrap()).layout().unwrap()
     }
 
     fn build<'b>(

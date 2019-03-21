@@ -85,14 +85,18 @@ impl ShaderLayoutGenerator for (SpirvShaderDescription, SpirvShaderDescription) 
                 }
             }
 
-            self.1.descriptor_sets.iter().for_each(|set| {
-                set.iter().for_each(|descriptor| {
-                    if let None = out_set.iter().find(|v| compare_bindings(v, descriptor) == BindingEquality::Equal) {
-                        out_set.push(descriptor.clone());
-                    }
-                });
-            });
+            set_layouts.push(SetLayout { bindings: out_set } );
+        }
 
+        let mut out_set = Vec::new();
+        self.1.descriptor_sets.iter().for_each(|set| {
+            set.iter().for_each(|descriptor| {
+                if let None = out_set.iter().find(|v| compare_bindings(v, descriptor) == BindingEquality::Equal) {
+                    out_set.push(descriptor.clone());
+                }
+            });
+        });
+        if out_set.len() > 0 {
             set_layouts.push(SetLayout { bindings: out_set } );
         }
 
