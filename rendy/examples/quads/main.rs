@@ -157,9 +157,8 @@ where
 
     #[cfg(feature = "spirv-reflection")]
     fn layout(&self) -> Layout {
-        log::trace!("Using: {:?}", RENDER_VERTEX.reflect().unwrap().layout());
         use rendy::graph::reflect::ShaderLayoutGenerator;
-        (RENDER_VERTEX.reflect().unwrap(), RENDER_FRAGMENT.reflect().unwrap()).layout()
+        (RENDER_VERTEX.reflect().unwrap(), RENDER_FRAGMENT.reflect().unwrap()).layout().unwrap()
     }
 
     fn build<'a>(
