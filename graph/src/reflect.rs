@@ -4,6 +4,8 @@ use rendy_shader::reflect::SpirvShaderDescription;
 use crate::node::render::{Layout, SetLayout};
 
 /// Extension for SpirvShaderReflection providing graph render type conversion
+/// Implementors of this return the appropriate descriptor sets and attribute layers for a given shader set.
+// this lives in graph instead of Shader due to not wanting to pull in all the layout requirements and cause a cross-dependency with rendy-shader
 pub trait ShaderLayoutGenerator {
     /// Convert reflected descriptor sets to a Layout structure
     fn layout(&self) -> Result<Layout, failure::Error>;
@@ -12,6 +14,8 @@ pub trait ShaderLayoutGenerator {
     fn attributes(&self) -> (Vec<gfx_hal::pso::Element<gfx_hal::format::Format>>, gfx_hal::pso::ElemStride);
 }
 
+///
+/// This implementation lives to reflect a single shader description into a usable gfx layout
 impl ShaderLayoutGenerator for SpirvShaderDescription {
     fn layout(&self) -> Result<Layout, failure::Error> {
         Ok(Layout {
@@ -31,14 +35,19 @@ impl ShaderLayoutGenerator for SpirvShaderDescription {
     }
 }
 
+
+/// This enum provides logical comparison results for descriptor sets. Because shaders can share bindings,
+/// we cannot do a strict equality check for exclusion - we must see if shaders match, or if they are the same bindings
+/// but mismatched descriptions.
 #[derive(Debug, Hash, Eq, PartialEq, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum BindingEquality {
-    Equal,
-    SameBindingNonEqual,
-    NotEqual,
+    Equal,  /// The bindings match
+    SameBindingNonEqual, /// The bindings share a binding index, but have different values. This is usually an error case.
+    NotEqual, /// The bindings do not equal
 }
 
+/// Logically compares two descriptor layout bindings to determine their relational equality.
 pub fn compare_bindings(lhv: &gfx_hal::pso::DescriptorSetLayoutBinding, rhv: &gfx_hal::pso::DescriptorSetLayoutBinding) -> BindingEquality {
     if lhv.binding == rhv.binding
         && lhv.count == rhv.count
@@ -54,6 +63,10 @@ pub fn compare_bindings(lhv: &gfx_hal::pso::DescriptorSetLayoutBinding, rhv: &gf
     return BindingEquality::NotEqual;
 }
 
+///
+/// This implementation lives to merge two shader reflections into a single layout and attribute descriptor.
+/// This will be the most commonly used implementation of [ShaderLayoutGenerator], as it is capable of merging and mapping
+/// descriptors for a Vertex+Fragment shader pair.
 impl ShaderLayoutGenerator for (SpirvShaderDescription, SpirvShaderDescription) {
     fn layout(&self) -> Result<Layout, failure::Error> {
         let mut set_layouts = Vec::new();
@@ -72,6 +85,9 @@ impl ShaderLayoutGenerator for (SpirvShaderDescription, SpirvShaderDescription) 
                                     out_set.push(copy);
                                 },
                                 BindingEquality::SameBindingNonEqual => {
+                                    // We throw an error here because it means we found a binding
+                                    // in both shaders that has the same binding number, but different descriptions.
+                                    // Therefore its user error.
                                     return Err(failure::format_err!( "Descriptor binding @ (binding: {}, index={}) mismatch between the two shaders. This usually means there is a binding conflict between the two shaders.",
                                     descriptor_1.binding,
                                     n));
@@ -88,6 +104,9 @@ impl ShaderLayoutGenerator for (SpirvShaderDescription, SpirvShaderDescription) 
             set_layouts.push(SetLayout { bindings: out_set } );
         }
 
+        // After iterating the first shaders binding set (vertex), we THEN iterate the second shader (fragment usually)
+        // And only add descriptor sets which were not already added in the vertex shader. We do this because they can
+        // share descriptor sets or partials
         let mut out_set = Vec::new();
         self.1.descriptor_sets.iter().for_each(|set| {
             set.iter().for_each(|descriptor| {
@@ -96,6 +115,7 @@ impl ShaderLayoutGenerator for (SpirvShaderDescription, SpirvShaderDescription) 
                 }
             });
         });
+
         if out_set.len() > 0 {
             set_layouts.push(SetLayout { bindings: out_set } );
         }

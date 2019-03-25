@@ -296,7 +296,7 @@ impl SpirvShaderDescription {
                 let mut descriptor_sets_final = descriptor_sets
                     .map_err(|_| failure::format_err!("Error parsing descriptor sets"))?;
                 descriptor_sets_final.iter_mut().for_each(|v| {
-                    v.iter_mut().for_each(|(mut set)| {
+                    v.iter_mut().for_each(|mut set| {
                         set.stage_flags = convert_stage(module.get_shader_stage())
                     });
                 });
