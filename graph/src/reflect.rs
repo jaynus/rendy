@@ -92,8 +92,28 @@ impl<'a, I, S> Iterator for ShaderLayoutGeneratorIter<I>
     }
 }
 
+trait ShaderLayoutGeneratorIterMerge {
+    fn merge_layout(&mut self) -> Result<Layout, failure::Error>;
+}
+impl<'a, I, S> ShaderLayoutGeneratorIterMerge for I
+    where I: Iterator<Item=&'a S>,
+          S: 'a + Shader + Sized
+{
+    fn merge_layout(&mut self) -> Result<Layout, failure::Error> {
 
-///
+        let next = self.next();
+        while next.is_some() {
+
+
+
+            let next = self.next();
+        }
+
+        Err(failure::format_err!("asdf")
+    }
+}
+
+
 /// This implementation lives to merge two shader reflections into a single layout and attribute descriptor.
 /// This will be the most commonly used implementation of [ShaderLayoutGenerator], as it is capable of merging and mapping
 /// descriptors for a Vertex+Fragment shader pair.
