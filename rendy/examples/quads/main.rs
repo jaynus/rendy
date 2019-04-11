@@ -88,6 +88,7 @@ where
 {
     type Pipeline = QuadsRenderPipeline<B>;
 
+    #[cfg(not(feature = "spirv-reflection"))]
     fn vertices(
         &self,
     ) -> Vec<(
@@ -96,6 +97,19 @@ where
         gfx_hal::pso::InstanceRate,
     )> {
         vec![Color::VERTEX.gfx_vertex_input_desc(0)]
+    }
+
+    #[cfg(feature = "spirv-reflection")]
+    fn vertices(
+        &self,
+    ) -> Vec<(
+        Vec<gfx_hal::pso::Element<gfx_hal::format::Format>>,
+        gfx_hal::pso::ElemStride,
+        gfx_hal::pso::InstanceRate,
+    )> {
+        use rendy::graph::reflect::ShaderLayoutGenerator;
+        let attr = RENDER_VERTEX.attributes().unwrap();
+        vec![(attr.0, attr.1, 0)]
     }
 
     fn load_shader_set<'a>(
@@ -158,7 +172,8 @@ where
     #[cfg(feature = "spirv-reflection")]
     fn layout(&self) -> Layout {
         use rendy::graph::reflect::ShaderLayoutGenerator;
-        (RENDER_VERTEX.reflect().unwrap(), RENDER_FRAGMENT.reflect().unwrap()).layout().unwrap()
+        use rendy::graph::reflect::SpirvLayoutMerger;
+        vec![*RENDER_VERTEX, *RENDER_FRAGMENT].merge().unwrap()
     }
 
     fn build<'a>(

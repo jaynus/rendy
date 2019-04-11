@@ -126,8 +126,9 @@ impl ReflectInto<gfx_hal::pso::Element<gfx_hal::format::Format>>
     fn reflect_into(
         &self,
     ) -> Result<gfx_hal::pso::Element<gfx_hal::format::Format>, failure::Error> {
+        let format = type_element_format(self.type_flags, &self.traits)?;
         Ok(gfx_hal::pso::Element {
-            format: type_element_format(self.type_flags, &self.traits)?,
+            format: format,
             offset: 0,
         })
     }

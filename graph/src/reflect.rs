@@ -1,8 +1,7 @@
 /// Reflection extensions
 
 use rendy_shader::{
-    Shader,
-    reflect::SpirvShaderDescription
+    Shader, SpirvShaderInfo,
 };
 use crate::node::render::{Layout, SetLayout};
 
@@ -14,206 +13,126 @@ pub trait ShaderLayoutGenerator {
     fn layout(&self) -> Result<Layout, failure::Error>;
 
     /// Convert reflected attributes to a direct gfx_hal element array
-    fn attributes(&self) -> (Vec<gfx_hal::pso::Element<gfx_hal::format::Format>>, gfx_hal::pso::ElemStride);
+    fn attributes(&self) -> Result<(Vec<gfx_hal::pso::Element<gfx_hal::format::Format>>, gfx_hal::pso::ElemStride), failure::Error>;
 
     /// Returns the stage flag for this shader
-    fn stage(&self) -> gfx_hal::pso::ShaderStageFlags;
+    fn stage(&self) -> Result<gfx_hal::pso::ShaderStageFlags, failure::Error>;
 }
 
 ///
 /// This implementation lives to reflect a single shader description into a usable gfx layout
-impl ShaderLayoutGenerator for SpirvShaderDescription {
+impl<S: Shader> ShaderLayoutGenerator for S {
     fn layout(&self) -> Result<Layout, failure::Error> {
         Ok(Layout {
-            sets: self.descriptor_sets.iter().map(|set| SetLayout { bindings: set.clone() }).collect(),
+            sets: self.reflect()?.descriptor_sets.iter()
+                .map(|set| SetLayout { bindings: set.clone() })
+                .collect(),
             push_constants: Vec::new(),
         })
     }
 
-    fn attributes(&self) -> (Vec<gfx_hal::pso::Element<gfx_hal::format::Format>>, gfx_hal::pso::ElemStride)
+    fn attributes(&self) -> Result<(Vec<gfx_hal::pso::Element<gfx_hal::format::Format>>, gfx_hal::pso::ElemStride), failure::Error>
     {
-        let stride: u32 = 0;
-        let elements: Vec<gfx_hal::pso::Element<gfx_hal::format::Format>> = self.input_attributes.iter()
-            .map(|v| { v.element } )
-            .collect();
+        let mut input_attributes = self.reflect()?.input_attributes;
 
-        (elements, stride)
-    }
+        let mut sizes = Vec::<u32>::with_capacity(input_attributes.len());
+        sizes.resize(input_attributes.len(), u32::default());
 
-    fn stage(&self) -> gfx_hal::pso::ShaderStageFlags {
-        self.stage_flag
-    }
-}
-
-/// ShaderLayoutGenerator implemented for a tuple of its reflected types
-impl ShaderLayoutGenerator for (Layout, (Vec<gfx_hal::pso::Element<gfx_hal::format::Format>>, gfx_hal::pso::ElemStride)) {
-    fn layout(&self) -> Result<Layout, failure::Error> {
-        Ok(self.0.clone())
-    }
-
-    fn attributes(&self) -> (Vec<gfx_hal::pso::Element<gfx_hal::format::Format>>, gfx_hal::pso::ElemStride) {
-        self.1.clone()
-    }
-
-    fn stage(&self) -> gfx_hal::pso::ShaderStageFlags {
-        gfx_hal::pso::ShaderStageFlags::GRAPHICS
-    }
-}
-
-struct ShaderLayoutGeneratorIter<I> {
-    shaders: I,
-}
-impl<'a, I, S> ShaderLayoutGeneratorIter<I>
-    where I: Iterator<Item=&'a S>,
-          S: 'a + Shader + Sized
-{
-    pub fn new(shaders: I) -> Self {
-        Self {
-            shaders,
-        }
-    }
-}
-impl<'a, I, S> Iterator for ShaderLayoutGeneratorIter<I>
-    where I: Iterator<Item=&'a S>,
-          S: 'a + Shader + Sized
-{
-    type Item = Result<Layout, failure::Error>;
-
-    #[inline]
-    fn next(&mut self) -> Option<Self::Item> {
-        let shader = self.shaders.next()?;
-        match shader.reflect() {
-            Ok(r) => Some(match r.layout() {
-                Ok(v) => Ok(v),
-                Err(e) => Err(e),
-            }),
-            Err(e) => Some(Err(e)),
-        }
-    }
-}
-
-trait ShaderLayoutGeneratorIterMerge {
-    fn merge_layout(&mut self) -> Result<Layout, failure::Error>;
-}
-impl<'a, I, S> ShaderLayoutGeneratorIterMerge for I
-    where I: Iterator<Item=&'a S>,
-          S: 'a + Shader + Sized
-{
-    fn merge_layout(&mut self) -> Result<Layout, failure::Error> {
-
-        let next = self.next();
-        while next.is_some() {
-
-
-
-            let next = self.next();
-        }
-
-        Err(failure::format_err!("asdf")
-    }
-}
-
-
-/// This implementation lives to merge two shader reflections into a single layout and attribute descriptor.
-/// This will be the most commonly used implementation of [ShaderLayoutGenerator], as it is capable of merging and mapping
-/// descriptors for a Vertex+Fragment shader pair.
-impl<S> ShaderLayoutGenerator for (S, S)
-    where S: ShaderLayoutGenerator + Sized
-{
-    fn layout(&self) -> Result<Layout, failure::Error> {
-        let mut set_layouts = Vec::new();
-
-        let first_layout = self.0.layout()?;
-        let second_layout = self.1.layout()?;
-        log::trace!("Left Hand Shader: {:?}", first_layout);
-        log::trace!("Right Hand Shader: {:?}", second_layout);
-
-        for (n, set_1) in first_layout.sets.iter().enumerate() {
-            let mut out_set = Vec::new();
-
-            if ! second_layout.sets.is_empty() {
-                for (_, set_2) in second_layout.sets.iter().enumerate() {
-                    if n <= set_2.bindings.len() { // We have matching sets, do they have matching bindings?
-                        for descriptor_1 in &set_1.bindings {
-                            for descriptor_2 in &set_2.bindings {
-                                match compare_bindings(descriptor_1, descriptor_2) {
-                                    BindingEquality::Equal => {
-                                        // Change the binding type to graphics because its both stages
-                                        let mut copy = descriptor_1.clone();
-                                        copy.stage_flags = gfx_hal::pso::ShaderStageFlags::FRAGMENT | gfx_hal::pso::ShaderStageFlags::VERTEX;
-                                        out_set.push(copy);
-                                    },
-                                    BindingEquality::SameBindingNonEqual => {
-                                        // We throw an error here because it means we found a binding
-                                        // in both shaders that has the same binding number, but different descriptions.
-                                        // Therefore its user error.
-                                        return Err(failure::format_err!( "Descriptor binding @ (binding: {}, index={}) mismatch between the two shaders. This usually means there is a binding conflict between the two shaders.",
-                                    descriptor_1.binding,
-                                    n));
-                                    },
-                                    BindingEquality::NotEqual => {
-                                        out_set.push(descriptor_1.clone());
-                                    },
-                                };
-                            }
-                        }
-                    }
-                }
-            } else {
-                self.0.layout()?.sets.iter().for_each(|set| {
-                    set.bindings.iter().for_each(|descriptor| { out_set.push(descriptor.clone()); });
-                });
-            }
-
-            set_layouts.push(SetLayout { bindings: out_set } );
-        }
-
-        // After iterating the first shaders binding set (vertex), we THEN iterate the second shader (fragment usually)
-        // And only add descriptor sets which were not already added in the vertex shader. We do this because they can
-        // share descriptor sets or partials
-        let mut out_set = Vec::new();
-        self.1.layout()?.sets.iter().for_each(|set| {
-            set.bindings.iter().for_each(|descriptor| {
-                set_layouts.iter().for_each(|existing_set| {
-                    if let None = existing_set.bindings.iter().find(|v| compare_bindings(v, descriptor) == BindingEquality::Equal) {
-                        out_set.push(descriptor.clone());
-                    }
-                })
+        input_attributes.iter()
+            .filter(|e| {
+                e.location != 0xFFFFFFFF
+            })
+            .for_each(|e|  {
+                sizes.insert(e.location as usize, e.element.format.surface_desc().bits as u32 / 8);
             });
+
+        input_attributes.iter_mut()
+            .filter(|e| {
+                e.location != 0xFFFFFFFF
+            })
+            .for_each(|mut e| {
+                // Add the sizes before this element, and create its offset.
+                let mut offset = 0;
+                for n in 0..e.location {
+                    offset += sizes.get(n as usize).unwrap();
+                }
+                e.element.offset = offset;
         });
 
-        if out_set.len() > 0 {
-            set_layouts.push(SetLayout { bindings: out_set } );
+        let mut elements: Vec<gfx_hal::pso::Element<gfx_hal::format::Format>> = input_attributes.iter()
+            .filter(|e| {
+                e.location != 0xFFFFFFFF
+            })
+            .map(|e|  {
+                e.element
+            })
+            .collect();
+
+        let stride = sizes.iter().sum();
+        log::trace!("vertout: {:?}, {:?}", elements, stride);
+
+        Ok((elements, stride))
+    }
+
+    fn stage(&self) -> Result<gfx_hal::pso::ShaderStageFlags, failure::Error> {
+        Ok(self.reflect()?.stage_flag)
+    }
+}
+
+pub trait SpirvLayoutMerger {
+    fn merge(mut self, ) -> Result<Layout, failure::Error>;
+}
+impl<T> SpirvLayoutMerger for T
+    where T: IntoIterator,
+          T::Item: Shader + Sized
+{
+    fn merge(mut self, ) -> Result<Layout, failure::Error> {
+        let mut iter = self.into_iter();
+
+        let mut sets = Vec::new();
+
+        let mut shader = iter.next();
+        while shader.is_some() {
+            let s = shader.unwrap();
+            let current_layout = s.layout()?;
+
+            for (n, set) in current_layout.sets.iter().enumerate() {
+                if n < sets.len() {
+                    // The set already exists, lets make sure we match or are a subset of it. If we are a Superset of it, we should replace it.
+                    if let Some(existing_set) = sets.get(n) {
+                        match compare_set(set, existing_set) {
+                            SetEquality::NotEqual => {
+                                return Err(failure::format_err!("Mismatching bindings between shaders for set #{}", n));
+                            },
+                            SetEquality::SupersetOf => {
+                                sets.insert(n, set.clone()); // Overwrite it
+                            },
+                            SetEquality::Equal | SetEquality::SubsetOf => {
+                                for binding in sets.get_mut(n).unwrap().bindings.iter_mut() {
+                                    binding.stage_flags |= s.stage()?
+                                }
+                            }, // We match, just skip it
+                        }
+                    } else {
+                        // Its a new set, just push it
+                        sets.push(set.clone());
+                    }
+                } else {
+                    // Its a new set, just push it
+                    sets.push(set.clone());
+                }
+            }
+
+            shader = iter.next();
         }
 
-        log::trace!("Reflecting Layout {:?}", set_layouts);
         Ok(Layout {
-            sets: set_layouts,
-            push_constants: Vec::new(),
+            sets,
+            push_constants: vec![],
         })
     }
 
-    fn attributes(&self) -> (Vec<gfx_hal::pso::Element<gfx_hal::format::Format>>, gfx_hal::pso::ElemStride) {
-        if self.0.stage() == gfx_hal::pso::ShaderStageFlags::VERTEX {
-            self.0.attributes()
-        } else if self.1.stage() == gfx_hal::pso::ShaderStageFlags::VERTEX {
-            self.1.attributes()
-        } else {
-            panic!("No Vertex shader is provided for attributes!");
-        }
-    }
-
-    fn stage(&self) -> gfx_hal::pso::ShaderStageFlags {
-        self.0.stage() | self.1.stage()
-    }
 }
-
-pub fn merge_descriptor_sets<'a, I>(mut layouts: I) -> Result<Layout, failure::Error>
-    where I: Iterator<Item = &'a dyn ShaderLayoutGenerator>,
-{
-    layouts.next().unwrap().layout()
-}
-
 
 /// This enum provides logical comparison results for descriptor sets. Because shaders can share bindings,
 /// we cannot do a strict equality check for exclusion - we must see if shaders match, or if they are the same bindings
@@ -221,9 +140,9 @@ pub fn merge_descriptor_sets<'a, I>(mut layouts: I) -> Result<Layout, failure::E
 #[derive(Debug, Hash, Eq, PartialEq, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum BindingEquality {
-    /// The bindings share a binding index, but have different values. This is usually an error case.
-    Equal,
     /// The bindings match
+    Equal,
+    /// The bindings share a binding index, but have different values. This is usually an error case.
     SameBindingNonEqual,
     /// The bindings do not equal
     NotEqual,
@@ -243,4 +162,57 @@ pub fn compare_bindings(lhv: &gfx_hal::pso::DescriptorSetLayoutBinding, rhv: &gf
     }
 
     return BindingEquality::NotEqual;
+}
+
+/// This enum provides logical comparison results for sets. Because shaders can share bindings,
+/// we cannot do a strict equality check for exclusion - we must see if shaders match, or if they are the same bindings
+/// but mismatched descriptions.
+#[derive(Debug, Hash, Eq, PartialEq, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub enum SetEquality {
+    /// The sets match
+    Equal,
+    /// The sets share a binding index, but have different values. This is usually an error case.
+    SubsetOf,
+    /// A superset set layout. This means LHV contains more data than RHV
+    SupersetOf,
+    /// Invalid Match
+    NotEqual,
+}
+
+pub fn compare_set(lhv :&SetLayout, rhv: &SetLayout) -> SetEquality {
+    use std::collections::HashMap;
+    // Bindings may not be in order, so we need to make a copy and index them by binding.
+    let mut lhv_bindings = HashMap::new();
+    lhv.bindings.iter().for_each(|b| { lhv_bindings.insert(b.binding, b); });
+
+    let mut rhv_bindings = HashMap::new();
+    rhv.bindings.iter().for_each(|b| { rhv_bindings.insert(b.binding, b); });
+
+    let mut predicate = if lhv.bindings.len() == rhv.bindings.len() {
+        SetEquality::Equal
+    } else if lhv.bindings.len() > rhv.bindings.len() {
+        SetEquality::SupersetOf
+    } else {
+        SetEquality::SubsetOf
+    };
+
+
+    for (key, lhv_value) in lhv_bindings {
+        if let Some(rhv_value) = rhv_bindings.get(&key) {
+            match compare_bindings(lhv_value, rhv_value) {
+                BindingEquality::Equal => {},
+                BindingEquality::NotEqual | BindingEquality::SameBindingNonEqual => {
+                    return SetEquality::NotEqual;
+                },
+            }
+        } else {
+            if predicate == SetEquality::Equal || predicate == SetEquality::SubsetOf {
+                return SetEquality::NotEqual;
+            }
+        }
+    }
+
+
+    predicate
 }
