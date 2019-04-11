@@ -2,9 +2,6 @@
 use super::Shader;
 pub use shaderc::{self, ShaderKind, SourceLanguage};
 
-#[cfg(feature = "spirv-reflection")]
-use crate::reflect;
-
 macro_rules! vk_make_version {
     ($major: expr, $minor: expr, $patch: expr) => {
         (($major as u32) << 22) | (($minor as u32) << 12) | $patch as u32
@@ -61,12 +58,6 @@ where
             )?;
 
         Ok(std::borrow::Cow::Owned(artifact.as_binary_u8().into()))
-    }
-
-    fn reflect(&self) -> Result<reflect::SpirvShaderDescription, failure::Error> {
-        Ok(reflect::SpirvShaderDescription::from_bytes(
-            &*(self.spirv()?),
-        )?)
     }
 }
 

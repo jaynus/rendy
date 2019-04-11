@@ -1,10 +1,7 @@
 //! Using spirv-reflect-rs for reflection.
 //!
 
-use log::trace;
-
 use spirv_reflect::{types::*, ShaderModule};
-
 use gfx_hal::format::Format;
 
 /// Workaround extension trait copy of std::convert::From, for simple conversion from spirv-reflect types to gfx_hal types
@@ -269,32 +266,33 @@ pub struct SpirvShaderDescription {
 impl SpirvShaderDescription {
     ///
     pub fn from_bytes(data: &[u8]) -> Result<Self, failure::Error> {
-        trace!("Shader reflecting into SpirvShaderDescription");
+        log::trace!("Shader reflecting into SpirvShaderDescription");
 
         match ShaderModule::load_u8_data(data) {
             Ok(module) => {
                 let input_attributes: Result<Vec<_>, _> = module
                     .enumerate_input_variables(None)
-                    .map_err(|_| failure::format_err!("Cant get input variables"))?
+                    .map_err(|e| failure::format_err!("Failed to get input attributes from spirv-reflect: {}", e))?
                     .iter()
                     .map(ReflectInto::<gfx_hal::pso::AttributeDesc>::reflect_into)
                     .collect();
 
                 let output_attributes: Result<Vec<_>, _> = module
                     .enumerate_output_variables(None)
-                    .map_err(|_| failure::format_err!("Cant get output variables"))?
+                    .map_err(|e| failure::format_err!("Failed to get output attributes from spirv-reflect: {}", e))?
                     .iter()
                     .map(ReflectInto::<gfx_hal::pso::AttributeDesc>::reflect_into)
                     .collect();
 
-                let descriptor_sets: Result<Vec<_>, _> = module.enumerate_descriptor_sets(None).map_err(|_| failure::format_err!("Cant get descriptor sets") )?.iter()
+                let descriptor_sets: Result<Vec<_>, _> = module.enumerate_descriptor_sets(None)
+                    .map_err(|e| failure::format_err!("Failed to get descriptor sets from spirv-reflect: {}", e) )?.iter()
                     .map(ReflectInto::<Vec<gfx_hal::pso::DescriptorSetLayoutBinding>>::reflect_into)
                     .collect();
 
                 // This is a fixup-step required because of our implementation. Because we dont pass the module around
                 // to the all the reflect_into API's, we need to fix up the shader stage here at the end. Kinda a hack
                 let mut descriptor_sets_final = descriptor_sets
-                    .map_err(|_| failure::format_err!("Error parsing descriptor sets"))?;
+                    .map_err(|e| failure::format_err!("Failed to parse descriptor sets:: {}", e))?;
                 descriptor_sets_final.iter_mut().for_each(|v| {
                     v.iter_mut().for_each(|mut set| {
                         set.stage_flags = convert_stage(module.get_shader_stage())
@@ -303,13 +301,13 @@ impl SpirvShaderDescription {
 
                 Ok(Self {
                     input_attributes: input_attributes
-                        .map_err(|_| failure::format_err!("Error parsing input attributes"))?,
+                        .map_err(|e| failure::format_err!("Error parsing input attributes: {}", e))?,
                     output_attributes: output_attributes
-                        .map_err(|_| failure::format_err!("Error parsing output attributes"))?,
+                        .map_err(|e| failure::format_err!("Error parsing output attributes: {}", e))?,
                     descriptor_sets: descriptor_sets_final,
                 })
             }
-            Err(_) => Err(failure::format_err!("Failed to load module data")),
+            Err(e) => Err(failure::format_err!("Failed to reflect data: {}", e)),
         }
     }
 }
