@@ -359,6 +359,7 @@ fn main() {
     env_logger::Builder::from_default_env()
         .filter_level(log::LevelFilter::Warn)
         .filter_module("meshes", log::LevelFilter::Trace)
+        .filter_module("rendy_graph", log::LevelFilter::Trace)
         .init();
 
     let config: Config = Default::default();

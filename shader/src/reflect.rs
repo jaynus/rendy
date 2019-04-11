@@ -261,6 +261,8 @@ pub struct SpirvShaderDescription {
     pub input_attributes: Vec<gfx_hal::pso::AttributeDesc>,
     /// Hashmap of output variables with names.
     pub descriptor_sets: Vec<Vec<gfx_hal::pso::DescriptorSetLayoutBinding>>,
+    /// Stage flag of this shader
+    pub stage_flag: gfx_hal::pso::ShaderStageFlags,
 }
 
 impl SpirvShaderDescription {
@@ -270,6 +272,8 @@ impl SpirvShaderDescription {
 
         match ShaderModule::load_u8_data(data) {
             Ok(module) => {
+                let stage_flag = convert_stage(module.get_shader_stage());
+
                 let input_attributes: Result<Vec<_>, _> = module
                     .enumerate_input_variables(None)
                     .map_err(|e| failure::format_err!("Failed to get input attributes from spirv-reflect: {}", e))?
@@ -295,7 +299,7 @@ impl SpirvShaderDescription {
                     .map_err(|e| failure::format_err!("Failed to parse descriptor sets:: {}", e))?;
                 descriptor_sets_final.iter_mut().for_each(|v| {
                     v.iter_mut().for_each(|mut set| {
-                        set.stage_flags = convert_stage(module.get_shader_stage())
+                        set.stage_flags = stage_flag
                     });
                 });
 
@@ -305,6 +309,7 @@ impl SpirvShaderDescription {
                     output_attributes: output_attributes
                         .map_err(|e| failure::format_err!("Error parsing output attributes: {}", e))?,
                     descriptor_sets: descriptor_sets_final,
+                    stage_flag,
                 })
             }
             Err(e) => Err(failure::format_err!("Failed to reflect data: {}", e)),

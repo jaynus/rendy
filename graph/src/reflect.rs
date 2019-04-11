@@ -1,6 +1,9 @@
 /// Reflection extensions
 
-use rendy_shader::reflect::SpirvShaderDescription;
+use rendy_shader::{
+    Shader,
+    reflect::SpirvShaderDescription
+};
 use crate::node::render::{Layout, SetLayout};
 
 /// Extension for SpirvShaderReflection providing graph render type conversion
@@ -12,6 +15,9 @@ pub trait ShaderLayoutGenerator {
 
     /// Convert reflected attributes to a direct gfx_hal element array
     fn attributes(&self) -> (Vec<gfx_hal::pso::Element<gfx_hal::format::Format>>, gfx_hal::pso::ElemStride);
+
+    /// Returns the stage flag for this shader
+    fn stage(&self) -> gfx_hal::pso::ShaderStageFlags;
 }
 
 ///
@@ -33,8 +39,58 @@ impl ShaderLayoutGenerator for SpirvShaderDescription {
 
         (elements, stride)
     }
+
+    fn stage(&self) -> gfx_hal::pso::ShaderStageFlags {
+        self.stage_flag
+    }
 }
 
+/// ShaderLayoutGenerator implemented for a tuple of its reflected types
+impl ShaderLayoutGenerator for (Layout, (Vec<gfx_hal::pso::Element<gfx_hal::format::Format>>, gfx_hal::pso::ElemStride)) {
+    fn layout(&self) -> Result<Layout, failure::Error> {
+        Ok(self.0.clone())
+    }
+
+    fn attributes(&self) -> (Vec<gfx_hal::pso::Element<gfx_hal::format::Format>>, gfx_hal::pso::ElemStride) {
+        self.1.clone()
+    }
+
+    fn stage(&self) -> gfx_hal::pso::ShaderStageFlags {
+        gfx_hal::pso::ShaderStageFlags::GRAPHICS
+    }
+}
+
+struct ShaderLayoutGeneratorIter<I> {
+    shaders: I,
+}
+impl<'a, I, S> ShaderLayoutGeneratorIter<I>
+    where I: Iterator<Item=&'a S>,
+          S: 'a + Shader + Sized
+{
+    pub fn new(shaders: I) -> Self {
+        Self {
+            shaders,
+        }
+    }
+}
+impl<'a, I, S> Iterator for ShaderLayoutGeneratorIter<I>
+    where I: Iterator<Item=&'a S>,
+          S: 'a + Shader + Sized
+{
+    type Item = Result<Layout, failure::Error>;
+
+    #[inline]
+    fn next(&mut self) -> Option<Self::Item> {
+        let shader = self.shaders.next()?;
+        match shader.reflect() {
+            Ok(r) => Some(match r.layout() {
+                Ok(v) => Ok(v),
+                Err(e) => Err(e),
+            }),
+            Err(e) => Some(Err(e)),
+        }
+    }
+}
 
 
 ///
@@ -49,25 +105,22 @@ impl<S> ShaderLayoutGenerator for (S, S)
 
         let first_layout = self.0.layout()?;
         let second_layout = self.1.layout()?;
-
-        log::trace!("first sets: {}", self.0.layout()?.sets.len());
+        log::trace!("Left Hand Shader: {:?}", first_layout);
+        log::trace!("Right Hand Shader: {:?}", second_layout);
 
         for (n, set_1) in first_layout.sets.iter().enumerate() {
             let mut out_set = Vec::new();
-            log::trace!("second sets: {}", self.1.layout()?.sets.len());
 
             if ! second_layout.sets.is_empty() {
                 for (_, set_2) in second_layout.sets.iter().enumerate() {
                     if n <= set_2.bindings.len() { // We have matching sets, do they have matching bindings?
-                        log::trace!("Set had bindings");
                         for descriptor_1 in &set_1.bindings {
                             for descriptor_2 in &set_2.bindings {
-                                log::trace!("iter");
                                 match compare_bindings(descriptor_1, descriptor_2) {
                                     BindingEquality::Equal => {
                                         // Change the binding type to graphics because its both stages
                                         let mut copy = descriptor_1.clone();
-                                        copy.stage_flags = gfx_hal::pso::ShaderStageFlags::GRAPHICS;
+                                        copy.stage_flags = gfx_hal::pso::ShaderStageFlags::FRAGMENT | gfx_hal::pso::ShaderStageFlags::VERTEX;
                                         out_set.push(copy);
                                     },
                                     BindingEquality::SameBindingNonEqual => {
@@ -101,17 +154,19 @@ impl<S> ShaderLayoutGenerator for (S, S)
         let mut out_set = Vec::new();
         self.1.layout()?.sets.iter().for_each(|set| {
             set.bindings.iter().for_each(|descriptor| {
-                if let None = out_set.iter().find(|v| compare_bindings(v, descriptor) == BindingEquality::Equal) {
-                    out_set.push(descriptor.clone());
-                }
+                set_layouts.iter().for_each(|existing_set| {
+                    if let None = existing_set.bindings.iter().find(|v| compare_bindings(v, descriptor) == BindingEquality::Equal) {
+                        out_set.push(descriptor.clone());
+                    }
+                })
             });
         });
 
-        log::trace!("Reflecting: {:?}", out_set);
         if out_set.len() > 0 {
             set_layouts.push(SetLayout { bindings: out_set } );
         }
 
+        log::trace!("Reflecting Layout {:?}", set_layouts);
         Ok(Layout {
             sets: set_layouts,
             push_constants: Vec::new(),
@@ -119,7 +174,17 @@ impl<S> ShaderLayoutGenerator for (S, S)
     }
 
     fn attributes(&self) -> (Vec<gfx_hal::pso::Element<gfx_hal::format::Format>>, gfx_hal::pso::ElemStride) {
-        self.0.attributes()
+        if self.0.stage() == gfx_hal::pso::ShaderStageFlags::VERTEX {
+            self.0.attributes()
+        } else if self.1.stage() == gfx_hal::pso::ShaderStageFlags::VERTEX {
+            self.1.attributes()
+        } else {
+            panic!("No Vertex shader is provided for attributes!");
+        }
+    }
+
+    fn stage(&self) -> gfx_hal::pso::ShaderStageFlags {
+        self.0.stage() | self.1.stage()
     }
 }
 
