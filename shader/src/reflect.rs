@@ -266,6 +266,27 @@ pub struct SpirvShaderDescription {
     pub stage_flag: gfx_hal::pso::ShaderStageFlags,
 }
 
+pub fn generate_attributes(attributes: Vec<variable::ReflectInterfaceVariable>) -> Result<Vec<gfx_hal::pso::AttributeDesc>, failure::Error> {
+    let mut out_attributes = Vec::new();
+
+    for attribute in &attributes {
+        println!("Attribute={:?}", attribute);
+        let reflected: gfx_hal::pso::AttributeDesc = attribute.reflect_into()?;
+        if attribute.array.dims.is_empty() {
+            out_attributes.push(reflected);
+        } else {
+            for n in 0..attribute.array.dims[0] {
+                let mut clone = reflected.clone();
+                clone.location += n;
+                println!("Out array: {:?}", clone);
+                out_attributes.push(clone);
+            }
+        }
+    }
+
+    Ok(out_attributes)
+}
+
 impl SpirvShaderDescription {
     ///
     pub fn from_bytes(data: &[u8]) -> Result<Self, failure::Error> {
@@ -275,12 +296,9 @@ impl SpirvShaderDescription {
             Ok(module) => {
                 let stage_flag = convert_stage(module.get_shader_stage());
 
-                let input_attributes: Result<Vec<_>, _> = module
-                    .enumerate_input_variables(None)
-                    .map_err(|e| failure::format_err!("Failed to get input attributes from spirv-reflect: {}", e))?
-                    .iter()
-                    .map(ReflectInto::<gfx_hal::pso::AttributeDesc>::reflect_into)
-                    .collect();
+                let input_attributes = generate_attributes(module
+                                                            .enumerate_input_variables(None)
+                                                            .map_err(|e| failure::format_err!("Failed to get input attributes from spirv-reflect: {}", e))?);
 
                 let output_attributes: Result<Vec<_>, _> = module
                     .enumerate_output_variables(None)

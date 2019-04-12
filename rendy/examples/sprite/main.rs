@@ -88,8 +88,7 @@ where
         gfx_hal::pso::InstanceRate,
     )> {
         use rendy::graph::reflect::ShaderLayoutGenerator;
-        let attr = VERTEX.attributes().unwrap();
-        vec![(attr.0, attr.1, 0)]
+        vec![VERTEX.attributes(.., 0).unwrap()]
     }
 
     fn load_shader_set<'b>(

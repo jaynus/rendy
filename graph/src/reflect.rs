@@ -3,6 +3,8 @@
 use rendy_shader::Shader;
 use crate::node::render::{Layout, SetLayout};
 
+use std::ops::{RangeBounds, Bound};
+
 /// Extension for SpirvShaderReflection providing graph render type conversion
 /// Implementors of this return the appropriate descriptor sets and attribute layers for a given shader set.
 // this lives in graph instead of Shader due to not wanting to pull in all the layout requirements and cause a cross-dependency with rendy-shader
@@ -11,10 +13,28 @@ pub trait ShaderLayoutGenerator {
     fn layout(&self) -> Result<Layout, failure::Error>;
 
     /// Convert reflected attributes to a direct gfx_hal element array
-    fn attributes(&self) -> Result<(Vec<gfx_hal::pso::Element<gfx_hal::format::Format>>, gfx_hal::pso::ElemStride), failure::Error>;
+    fn attributes<B: RangeBounds<usize>>(&self, range: B, rate: gfx_hal::pso::InstanceRate) -> Result<(Vec<gfx_hal::pso::Element<gfx_hal::format::Format>>, gfx_hal::pso::ElemStride, gfx_hal::pso::InstanceRate), failure::Error>;
 
     /// Returns the stage flag for this shader
     fn stage(&self) -> Result<gfx_hal::pso::ShaderStageFlags, failure::Error>;
+}
+
+fn range_contains<U, R>(range: &R, item: &U) -> bool
+    where
+        U: ?Sized + PartialOrd<U>,
+        R: RangeBounds<U>
+{
+    (match range.start_bound() {
+        Bound::Included(ref start) => *start <= item,
+        Bound::Excluded(ref start) => *start < item,
+        Bound::Unbounded => true,
+    })
+        &&
+        (match range.end_bound() {
+            Bound::Included(ref end) => item <= *end,
+            Bound::Excluded(ref end) => item < *end,
+            Bound::Unbounded => true,
+        })
 }
 
 ///
@@ -29,39 +49,41 @@ impl<S: Shader> ShaderLayoutGenerator for S {
         })
     }
 
-    fn attributes(&self) -> Result<(Vec<gfx_hal::pso::Element<gfx_hal::format::Format>>, gfx_hal::pso::ElemStride), failure::Error>
+    fn attributes<B: RangeBounds<usize>>(&self, range: B, rate: gfx_hal::pso::InstanceRate)
+        -> Result<(Vec<gfx_hal::pso::Element<gfx_hal::format::Format>>, gfx_hal::pso::ElemStride, gfx_hal::pso::InstanceRate), failure::Error>
     {
         let mut input_attributes = self.reflect()?.input_attributes;
-
+        println!("Trying: {:?}", input_attributes);
         let mut sizes = Vec::<u32>::with_capacity(input_attributes.len());
         sizes.resize(input_attributes.len(), u32::default());
 
-        input_attributes.iter()
-            .filter(|e| {
-                e.location != 0xFFFFFFFF
+        input_attributes.iter().enumerate()
+            .filter(|(n, e)| {
+                e.location != 0xFFFFFFFF && range_contains(&range, &(e.location as usize))
             })
-            .for_each(|e|  {
+            .for_each(|(n, e)|  {
                 sizes.insert(e.location as usize, e.element.format.surface_desc().bits as u32 / 8);
+                println!("n={}, {:?}, size={}", e.location, e, e.element.format.surface_desc().bits as u32 / 8);
             });
 
-        input_attributes.iter_mut()
-            .filter(|e| {
-                e.location != 0xFFFFFFFF
+        input_attributes.iter_mut().enumerate()
+            .filter(|(n, e)| {
+                e.location != 0xFFFFFFFF && range_contains(&range, n)
             })
-            .for_each(|mut e| {
+            .for_each(|(_, mut e)| {
                 // Add the sizes before this element, and create its offset.
                 let mut offset = 0;
-                for n in 0..e.location {
-                    offset += sizes.get(n as usize).unwrap();
+                for i in 0..e.location {
+                    offset += sizes.get(i as usize).unwrap();
                 }
                 e.element.offset = offset;
         });
 
-        let elements: Vec<gfx_hal::pso::Element<gfx_hal::format::Format>> = input_attributes.iter()
-            .filter(|e| {
-                e.location != 0xFFFFFFFF
+        let elements: Vec<gfx_hal::pso::Element<gfx_hal::format::Format>> = input_attributes.iter().enumerate()
+            .filter(|(n, e)| {
+                e.location != 0xFFFFFFFF && range_contains(&range, n)
             })
-            .map(|e|  {
+            .map(|(_, e)|  {
                 e.element
             })
             .collect();
@@ -69,7 +91,7 @@ impl<S: Shader> ShaderLayoutGenerator for S {
         let stride = sizes.iter().sum();
         log::trace!("vertout: {:?}, {:?}", elements, stride);
 
-        Ok((elements, stride))
+        Ok((elements, stride, rate))
     }
 
     fn stage(&self) -> Result<gfx_hal::pso::ShaderStageFlags, failure::Error> {
