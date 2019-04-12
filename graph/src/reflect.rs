@@ -1,8 +1,6 @@
 /// Reflection extensions
 
-use rendy_shader::{
-    Shader, SpirvShaderInfo,
-};
+use rendy_shader::Shader;
 use crate::node::render::{Layout, SetLayout};
 
 /// Extension for SpirvShaderReflection providing graph render type conversion
@@ -59,7 +57,7 @@ impl<S: Shader> ShaderLayoutGenerator for S {
                 e.element.offset = offset;
         });
 
-        let mut elements: Vec<gfx_hal::pso::Element<gfx_hal::format::Format>> = input_attributes.iter()
+        let elements: Vec<gfx_hal::pso::Element<gfx_hal::format::Format>> = input_attributes.iter()
             .filter(|e| {
                 e.location != 0xFFFFFFFF
             })
@@ -80,13 +78,13 @@ impl<S: Shader> ShaderLayoutGenerator for S {
 }
 
 pub trait SpirvLayoutMerger {
-    fn merge(mut self, ) -> Result<Layout, failure::Error>;
+    fn merge(self, ) -> Result<Layout, failure::Error>;
 }
 impl<T> SpirvLayoutMerger for T
     where T: IntoIterator,
           T::Item: Shader + Sized
 {
-    fn merge(mut self, ) -> Result<Layout, failure::Error> {
+    fn merge(self, ) -> Result<Layout, failure::Error> {
         let mut iter = self.into_iter();
 
         let mut sets = Vec::new();
@@ -189,7 +187,7 @@ pub fn compare_set(lhv :&SetLayout, rhv: &SetLayout) -> SetEquality {
     let mut rhv_bindings = HashMap::new();
     rhv.bindings.iter().for_each(|b| { rhv_bindings.insert(b.binding, b); });
 
-    let mut predicate = if lhv.bindings.len() == rhv.bindings.len() {
+    let predicate = if lhv.bindings.len() == rhv.bindings.len() {
         SetEquality::Equal
     } else if lhv.bindings.len() > rhv.bindings.len() {
         SetEquality::SupersetOf

@@ -150,7 +150,6 @@ where
 
     #[cfg(feature = "spirv-reflection")]
     fn layout(&self) -> Layout {
-        use rendy::graph::reflect::ShaderLayoutGenerator;
         use rendy::graph::reflect::SpirvLayoutMerger;
         vec![*VERTEX, *FRAGMENT].merge().unwrap()
     }

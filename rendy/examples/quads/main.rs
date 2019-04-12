@@ -27,7 +27,7 @@ use rendy::{
     },
     hal::Device,
     memory::MemoryUsageValue,
-    mesh::{AsVertex, Color},
+    mesh::{Color},
     resource::buffer::Buffer,
     shader::{Shader, ShaderKind, SourceLanguage, StaticShaderInfo},
 };
@@ -171,7 +171,6 @@ where
 
     #[cfg(feature = "spirv-reflection")]
     fn layout(&self) -> Layout {
-        use rendy::graph::reflect::ShaderLayoutGenerator;
         use rendy::graph::reflect::SpirvLayoutMerger;
         vec![*RENDER_VERTEX, *RENDER_FRAGMENT].merge().unwrap()
     }
