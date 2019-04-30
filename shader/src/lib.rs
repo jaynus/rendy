@@ -18,11 +18,18 @@ mod shaderc;
 #[allow(dead_code)]
 mod reflect;
 
+#[cfg(feature = "codegen")]
+#[allow(dead_code)]
+mod codegen;
+
 #[cfg(feature = "shader-compiler")]
 pub use self::shaderc::*;
 
 #[cfg(feature = "spirv-reflection")]
 pub use self::reflect::{SpirvReflection, SpirvReflectionGenerator};
+
+#[cfg(feature = "codegen")]
+pub use self::codegen::*;
 
 #[cfg(not(feature = "spirv-reflection"))]
 #[derive(Default, Debug, Clone, Eq, PartialEq, Hash)]
